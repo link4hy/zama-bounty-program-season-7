@@ -3,9 +3,8 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "fhevm/lib/TFHE.sol";
 import "./MyConfidentialERC20.sol";
-import "fhevm/gateway/GatewayCaller.sol";
 
-contract EncryptedAuction is GatewayCaller {
+contract EncryptedAuction {
     event Start(uint256 startTime, uint256 endTime);
     event BidEvent(address indexed bidder, uint256 value);
     event Withdraw(address indexed bidder, uint256 value);
@@ -51,7 +50,9 @@ contract EncryptedAuction is GatewayCaller {
         require(bidPlacers[msg.sender] == false, "User already placed bid");
         require(block.timestamp < endTime, "Auction has ended");
 
-        uint256 amountToBuy = Gateway.toUint256(_amountToBuy);
+        uint256 amountToBuy = unwrapEuint256(_amountToBuy);
+        
+
         allBids.push(
             Bid(
                 msg.sender,
@@ -85,10 +86,10 @@ contract EncryptedAuction is GatewayCaller {
         started = true;
         ended = false;
         // inventory = euint256.wrap(_inventory);
-        inventory = Gateway.toUint256(_inventory);
+        inventory = unwrapEuint256(_inventory);
 
         tokenForAuction.transferFrom(owner, address(this), inventory);
-        endTime = block.timestamp + Gateway.toUint256(_duration);
+        endTime = block.timestamp + unwrapEuint256(_duration);
 
         emit Start(block.timestamp, endTime);
     }
@@ -183,5 +184,10 @@ contract EncryptedAuction is GatewayCaller {
 
     function balance() external view returns (uint256) {
         return address(this).balance;
+    }
+
+
+     function unwrapEuint256(euint256 amount) internal pure returns (uint256) {
+        return euint256.unwrap(amount);
     }
 }
