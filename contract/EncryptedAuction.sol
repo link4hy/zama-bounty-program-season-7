@@ -3,7 +3,9 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "fhevm/lib/TFHE.sol";
 import "./MyConfidentialERC20.sol";
-contract EncryptedAuction {
+import "fhevm/gateway/GatewayCaller.sol";
+
+contract EncryptedAuction is GatewayCaller {
     event Start(uint256 startTime, uint256 endTime);
     event BidEvent(address indexed bidder, uint256 value);
     event Withdraw(address indexed bidder, uint256 value);
@@ -28,40 +30,69 @@ contract EncryptedAuction {
     address payable public immutable owner;
     ERC20 public immutable tokenForAuction;
     uint256 constant MAX_BIDS = 50;
+
     constructor(address _tokenForAuction) {
         owner = payable(msg.sender);
         tokenForAuction = ERC20(_tokenForAuction);
     }
-    function placeBid(uint256 _amountToBuy) external payable {
+
+    function placeBid(einput encryptedAmount, bytes calldata inputProof)
+        public
+        payable
+        returns (bool)
+    {
+        placeBid(TFHE.asEuint256(encryptedAmount, inputProof));
+        return true;
+    }
+
+    function placeBid(euint256 _amountToBuy) public payable {
         require(started, "Auction has not started");
         require(allBids.length < MAX_BIDS, "Too many bids already");
         require(bidPlacers[msg.sender] == false, "User already placed bid");
         require(block.timestamp < endTime, "Auction has ended");
+
+        uint256 amountToBuy = Gateway.toUint256(_amountToBuy);
         allBids.push(
             Bid(
                 msg.sender,
-                _amountToBuy,
+                amountToBuy,
                 msg.value,
-                msg.value / _amountToBuy,
+                msg.value / amountToBuy,
                 block.timestamp
             )
         );
         bidPlacers[msg.sender] = true;
         emit BidEvent(msg.sender, msg.value);
     }
+
     function startAuction(
-        uint256 _duration,
-        uint256 _inventory
-    ) external onlyOwner {
+        einput encryptedDuration,
+        einput encryptedAmount,
+        bytes calldata inputProof
+    ) public returns (bool) {
+        startAuction(
+            TFHE.asEuint256(encryptedDuration, inputProof),
+            TFHE.asEuint256(encryptedAmount, inputProof)
+        );
+        return true;
+    }
+
+    function startAuction(euint256 _duration, euint256 _inventory)
+        public
+        onlyOwner
+    {
         require(!started, "Auction has already started");
         started = true;
         ended = false;
-        inventory = _inventory;
+        // inventory = euint256.wrap(_inventory);
+        inventory = Gateway.toUint256(_inventory);
+
         tokenForAuction.transferFrom(owner, address(this), inventory);
-        endTime = block.timestamp + _duration;
+        endTime = block.timestamp + Gateway.toUint256(_duration);
 
         emit Start(block.timestamp, endTime);
     }
+
     function endAuction() external onlyOwner {
         require(started, "Auction has not started");
 
@@ -75,6 +106,7 @@ contract EncryptedAuction {
             tokenForAuction.transfer(owner, inventory);
         }
     }
+
     function withdraw() external {
         require(!started, "Auction has started");
         require(distributed, "Must be concluded");
@@ -92,6 +124,7 @@ contract EncryptedAuction {
         }
         emit Withdraw(msg.sender, price_withdrawed);
     }
+
     function distributeAuction() external onlyOwner {
         _sortBids();
         require(ended, "Auction still in prgress");
@@ -120,6 +153,7 @@ contract EncryptedAuction {
             }
         }
     }
+
     function _sortBids() internal {
         for (uint256 i = 0; i < allBids.length; i++) {
             for (uint256 j = i + 1; j < allBids.length; j++) {
@@ -138,6 +172,7 @@ contract EncryptedAuction {
             }
         }
     }
+
     function _removeBid(uint256 index) internal {
         if (index >= allBids.length) return;
         for (uint256 i = index; i < allBids.length - 1; i++) {
@@ -145,6 +180,7 @@ contract EncryptedAuction {
         }
         allBids.pop();
     }
+
     function balance() external view returns (uint256) {
         return address(this).balance;
     }
